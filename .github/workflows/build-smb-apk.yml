@@ -11,6 +11,9 @@ on:
       - 'smb-server-app/**'
   workflow_dispatch:
 
+env:
+  GRADLE_VERSION: "8.6"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,25 +27,32 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      # Install a specific Gradle version (avoids needing gradle-wrapper.jar)
-      - name: Setup Gradle 8.6
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: '8.6'
+      # Download Gradle directly — no cache dependency, no wrapper jar needed
+      - name: Install Gradle ${{ env.GRADLE_VERSION }}
+        run: |
+          wget -q \
+            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
+            -O /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /opt/
+          echo "/opt/gradle-${GRADLE_VERSION}/bin" >> $GITHUB_PATH
 
-      # Android SDK is pre-installed on ubuntu-latest;
-      # accept licenses so Gradle doesn't hang asking for input.
+      - name: Verify Gradle & Android SDK
+        run: |
+          gradle --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" || echo "No platforms dir"
+
+      # Accept Android SDK licenses (ubuntu-latest has SDK pre-installed)
       - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null \
+            || yes | "$ANDROID_HOME/tools/bin/sdkmanager" --licenses 2>/dev/null \
+            || echo "sdkmanager not found, continuing..."
 
-      # Use the installed 'gradle' binary directly — no wrapper jar needed.
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
         working-directory: smb-server-app
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -55,8 +65,6 @@ jobs:
       - name: Build Release APK (unsigned)
         run: gradle assembleRelease --no-daemon
         working-directory: smb-server-app
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Upload Release APK (unsigned)
         uses: actions/upload-artifact@v4

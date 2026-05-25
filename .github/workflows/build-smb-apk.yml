@@ -57,7 +57,7 @@ jobs:
 
       # ── Build ─────────────────────────────────────────────────────────────
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -200
+        run: gradle assembleDebug --no-daemon --stacktrace
         working-directory: smb-server-app
 
       - name: Upload Debug APK
@@ -69,7 +69,7 @@ jobs:
           retention-days: 30
 
       - name: Build Release APK (unsigned)
-        run: gradle assembleRelease --no-daemon
+        run: gradle assembleRelease --no-daemon --stacktrace
         working-directory: smb-server-app
 
       - name: Upload Release APK (unsigned)

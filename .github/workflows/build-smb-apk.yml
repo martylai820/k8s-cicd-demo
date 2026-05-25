@@ -11,6 +11,10 @@ on:
       - 'smb-server-app/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write   # needed to post error comments
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,14 +30,13 @@ jobs:
           distribution: 'temurin'
 
       # ── Android SDK ────────────────────────────────────────────────────────
-      # ubuntu-latest ships Android SDK at $ANDROID_HOME.
-      # Install the exact platform + build-tools the project requires.
       - name: Install Android SDK packages
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -f "$SDKMANAGER" ]; then
             SDKMANAGER="$ANDROID_HOME/tools/bin/sdkmanager"
           fi
+          echo "sdkmanager = $SDKMANAGER"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
@@ -47,16 +50,39 @@ jobs:
         run: |
           echo "=== Java ===" && java -version 2>&1
           echo "=== ANDROID_HOME ===" && echo "$ANDROID_HOME"
-          echo "=== Platforms ===" && ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "no platforms dir"
-          echo "=== Build-Tools ===" && ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "no build-tools dir"
+          echo "=== Platforms ===" && ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "no platforms"
+          echo "=== Build-Tools ===" && ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "no build-tools"
           echo "=== local.properties ===" && cat smb-server-app/local.properties
           echo "=== gradlew ===" && ls -la smb-server-app/gradlew
-          echo "=== gradle-wrapper.jar ===" && ls -la smb-server-app/gradle/wrapper/gradle-wrapper.jar
+          echo "=== wrapper jar ===" && ls -la smb-server-app/gradle/wrapper/gradle-wrapper.jar
 
-      # ── Build (./gradlew downloads Gradle 8.6 automatically) ─────────────
+      # ── Build ─────────────────────────────────────────────────────────────
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        id: build_debug
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/build-debug.log
         working-directory: smb-server-app
+
+      # ── Post error to PR on failure ────────────────────────────────────────
+      - name: Report build error on PR
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let log = 'Could not read build log.';
+            try {
+              const full = fs.readFileSync('/tmp/build-debug.log', 'utf8');
+              // Grab last 4000 chars which contain the failure
+              log = full.length > 4000 ? full.slice(-4000) : full;
+            } catch(e) { log = String(e); }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 🔴 Build Debug APK — failure log\n\`\`\`\n${log}\n\`\`\``
+            });
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4

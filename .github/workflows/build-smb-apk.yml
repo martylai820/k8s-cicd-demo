@@ -28,7 +28,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Download Gradle directly — no cache dependency, no wrapper jar needed
+      # ── Android SDK setup ─────────────────────────────────────────────────
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android Platform 34 & Build Tools
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" \
+            "platform-tools" --sdk_root="$ANDROID_HOME"
+
+      # ── Gradle setup ──────────────────────────────────────────────────────
       - name: Install Gradle ${{ env.GRADLE_VERSION }}
         run: |
           wget -q \
@@ -37,21 +46,18 @@ jobs:
           unzip -q /tmp/gradle.zip -d /opt/
           echo "/opt/gradle-${GRADLE_VERSION}/bin" >> $GITHUB_PATH
 
-      - name: Verify Gradle & Android SDK
+      # ── Diagnostics (shows what failed if build errors out) ───────────────
+      - name: Verify environment
         run: |
-          gradle --version
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platforms" || echo "No platforms dir"
+          echo "=== Java ===" && java -version 2>&1
+          echo "=== Gradle ===" && /opt/gradle-${GRADLE_VERSION}/bin/gradle --version
+          echo "=== ANDROID_HOME ===" && echo "$ANDROID_HOME"
+          echo "=== Platforms ===" && ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "no platforms"
+          echo "=== Build-Tools ===" && ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "no build-tools"
 
-      # Accept Android SDK licenses (ubuntu-latest has SDK pre-installed)
-      - name: Accept Android SDK licenses
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null \
-            || yes | "$ANDROID_HOME/tools/bin/sdkmanager" --licenses 2>/dev/null \
-            || echo "sdkmanager not found, continuing..."
-
+      # ── Build ─────────────────────────────────────────────────────────────
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -200
         working-directory: smb-server-app
 
       - name: Upload Debug APK

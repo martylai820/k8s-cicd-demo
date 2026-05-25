@@ -11,9 +11,6 @@ on:
       - 'smb-server-app/**'
   workflow_dispatch:
 
-env:
-  GRADLE_VERSION: "8.6"
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,29 +26,16 @@ jobs:
           distribution: 'temurin'
 
       # ── Android SDK ────────────────────────────────────────────────────────
-      # ubuntu-latest ships Android SDK at $ANDROID_HOME (/usr/local/lib/android/sdk).
-      # We just need to install the exact platform + build-tools our project needs.
-      - name: Install Android Platform 34 & Build Tools
+      # ubuntu-latest ships Android SDK at $ANDROID_HOME.
+      # Install the exact platform + build-tools the project requires.
+      - name: Install Android SDK packages
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          # Add sdkmanager to PATH (location varies by runner image)
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -f "$SDKMANAGER" ]; then
             SDKMANAGER="$ANDROID_HOME/tools/bin/sdkmanager"
           fi
-          echo "Using sdkmanager: $SDKMANAGER"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
-
-      # ── Gradle setup ──────────────────────────────────────────────────────
-      - name: Install Gradle ${{ env.GRADLE_VERSION }}
-        run: |
-          wget -q \
-            "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
-            -O /tmp/gradle.zip
-          unzip -q /tmp/gradle.zip -d /opt/
-          echo "/opt/gradle-${GRADLE_VERSION}/bin" >> $GITHUB_PATH
 
       # ── sdk.dir for AGP ───────────────────────────────────────────────────
       - name: Write local.properties
@@ -62,15 +46,16 @@ jobs:
       - name: Verify environment
         run: |
           echo "=== Java ===" && java -version 2>&1
-          echo "=== Gradle ===" && /opt/gradle-${GRADLE_VERSION}/bin/gradle --version
           echo "=== ANDROID_HOME ===" && echo "$ANDROID_HOME"
           echo "=== Platforms ===" && ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "no platforms dir"
           echo "=== Build-Tools ===" && ls "$ANDROID_HOME/build-tools/" 2>/dev/null || echo "no build-tools dir"
           echo "=== local.properties ===" && cat smb-server-app/local.properties
+          echo "=== gradlew ===" && ls -la smb-server-app/gradlew
+          echo "=== gradle-wrapper.jar ===" && ls -la smb-server-app/gradle/wrapper/gradle-wrapper.jar
 
-      # ── Build ─────────────────────────────────────────────────────────────
+      # ── Build (./gradlew downloads Gradle 8.6 automatically) ─────────────
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
         working-directory: smb-server-app
 
       - name: Upload Debug APK
@@ -82,7 +67,7 @@ jobs:
           retention-days: 30
 
       - name: Build Release APK (unsigned)
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
         working-directory: smb-server-app
 
       - name: Upload Release APK (unsigned)

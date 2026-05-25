@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Base application theme (used by Manifest; Compose overrides via SmbServerTheme) -->
-    <style name="Theme.SmbServer" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- Base theme for the app window; Compose overrides colors at runtime via SmbServerTheme -->
+    <style name="Theme.SmbServer" parent="android:Theme.DeviceDefault.NoActionBar">
         <item name="android:statusBarColor">#FF0063A5</item>
         <item name="android:navigationBarColor">#FFF8F9FF</item>
     </style>

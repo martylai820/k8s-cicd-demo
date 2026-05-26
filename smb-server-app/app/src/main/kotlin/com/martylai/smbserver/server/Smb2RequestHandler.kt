@@ -29,8 +29,9 @@ class Smb2RequestHandler(
     // NTSTATUS for "object name collision" (file already exists)
     private val STATUS_OBJECT_NAME_COLLISION = 0xC0000035L
 
-    // The dialect actually negotiated with the current client (used by VALIDATE_NEGOTIATE_INFO)
-    @Volatile private var negotiatedDialect: Int = Smb2Constants.SMB2_DIALECT_2_1
+    // We always negotiate SMB 2.1 (see handleNegotiate). No need for a per-connection
+    // mutable field — a shared constant is safe and avoids race conditions.
+    private val negotiatedDialect: Int = Smb2Constants.SMB2_DIALECT_2_1
 
     // Sessions keyed by sessionId
     private val sessions = ConcurrentHashMap<Long, Smb2Session>()
@@ -97,15 +98,18 @@ class Smb2RequestHandler(
         }
         Log.d(TAG, "NEGOTIATE dialects: ${dialects.map { "0x${it.toString(16)}" }}")
 
+        // Cap at SMB 2.1. SMB 3.x requires Negotiate Contexts in both the client
+        // request AND the server response (pre-auth integrity hash is MANDATORY for
+        // 3.1.1; 3.0/3.0.2 clients also expect them). Since we do not implement
+        // negotiate contexts, advertising any 3.x dialect causes Windows, macOS, and
+        // Cyberduck to immediately drop the connection after NEGOTIATE. SMB 2.1
+        // provides large-MTU support, is universally compatible, and needs no
+        // negotiate contexts.
         val dialect = when {
-            dialects.contains(Smb2Constants.SMB2_DIALECT_3_1_1) -> Smb2Constants.SMB2_DIALECT_3_1_1
-            dialects.contains(Smb2Constants.SMB2_DIALECT_3_0_2) -> Smb2Constants.SMB2_DIALECT_3_0_2
-            dialects.contains(Smb2Constants.SMB2_DIALECT_3_0)   -> Smb2Constants.SMB2_DIALECT_3_0
             dialects.contains(Smb2Constants.SMB2_DIALECT_2_1)   -> Smb2Constants.SMB2_DIALECT_2_1
             else                                                  -> Smb2Constants.SMB2_DIALECT_2_0_2
         }
 
-        negotiatedDialect = dialect
         val secBlob = NtlmHandler.buildSpnegoNegotiateToken()
 
         // Response fixed body = 64 bytes, then secBlob

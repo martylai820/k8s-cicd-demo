@@ -82,9 +82,14 @@ class Smb2Connection(
                     return data
                 }
                 0x81 -> {  // SESSION REQUEST — consume name fields, reply with positive ack
-                    if (length > 0) {
-                        val names = ByteArray(length.coerceAtMost(512))
-                        if (!readFully(input, names)) return null
+                    // Must drain ALL 'length' bytes to keep the stream in sync.
+                    // Using coerceAtMost(512) left the excess bytes in the stream and
+                    // caused the next header read to misparse, breaking the connection.
+                    var remaining = length
+                    while (remaining > 0) {
+                        val chunk = ByteArray(minOf(remaining, 4096))
+                        if (!readFully(input, chunk)) return null
+                        remaining -= chunk.size
                     }
                     Log.d(TAG, "NetBIOS SESSION REQUEST — sending POSITIVE RESPONSE")
                     output.write(byteArrayOf(0x82.toByte(), 0x00, 0x00, 0x00))

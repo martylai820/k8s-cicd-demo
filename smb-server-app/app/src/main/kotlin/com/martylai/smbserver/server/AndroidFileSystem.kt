@@ -109,8 +109,59 @@ class AndroidFileSystem(val rootDir: File) {
     fun renameFile(from: File, to: File): Boolean = from.renameTo(to)
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Build SMB2 directory entry buffers (FileBothDirectoryInformation class 3)
+    // Build SMB2 directory entry buffers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /** FileIdBothDirectoryInformation (class 37) — iOS 15+ requests this.
+     *  Same as class 3 but adds 2-byte Reserved2 + 8-byte FileId before FileName.
+     *  Fixed header: 104 bytes. */
+    fun buildFileIdBothDirInfo(info: FileInfo): ByteArray {
+        val nameBytes  = info.name.toByteArray(StandardCharsets.UTF_16LE)
+        val structSize = 104 + nameBytes.size
+        val buf = ByteBuffer.allocate(structSize).order(ByteOrder.LITTLE_ENDIAN)
+        buf.putInt(0)                                              // NextEntryOffset
+        buf.putInt(0)                                              // FileIndex
+        buf.putLong(info.createdTime)                             // CreationTime
+        buf.putLong(info.accessTime)                              // LastAccessTime
+        buf.putLong(info.modifiedTime)                            // LastWriteTime
+        buf.putLong(info.changeTime)                              // ChangeTime
+        buf.putLong(info.size)                                    // EndOfFile
+        buf.putLong(if (info.isDirectory) 0L else roundUpToBlock(info.size))  // AllocationSize
+        buf.putInt(info.attributes)                               // FileAttributes
+        buf.putInt(nameBytes.size)                                // FileNameLength
+        buf.putInt(0)                                             // EaSize
+        buf.put(0)                                                // ShortNameLength
+        buf.put(0)                                                // Reserved1
+        buf.put(ByteArray(24))                                    // ShortName (24 bytes)
+        buf.putShort(0)                                           // Reserved2
+        buf.putLong(info.name.hashCode().toLong() and 0x0000FFFFFFFFFFFFL)  // FileId (8 bytes)
+        buf.put(nameBytes)                                        // FileName
+        return buf.array().copyOf(structSize)
+    }
+
+    /** FileFullDirectoryInformation (class 2) — no ShortName field.
+     *  Fixed header: 68 bytes. */
+    fun buildFileFullDirInfo(info: FileInfo): ByteArray {
+        val nameBytes  = info.name.toByteArray(StandardCharsets.UTF_16LE)
+        val structSize = 68 + nameBytes.size
+        val buf = ByteBuffer.allocate(structSize).order(ByteOrder.LITTLE_ENDIAN)
+        buf.putInt(0)                                              // NextEntryOffset
+        buf.putInt(0)                                              // FileIndex
+        buf.putLong(info.createdTime)                             // CreationTime
+        buf.putLong(info.accessTime)                              // LastAccessTime
+        buf.putLong(info.modifiedTime)                            // LastWriteTime
+        buf.putLong(info.changeTime)                              // ChangeTime
+        buf.putLong(info.size)                                    // EndOfFile
+        buf.putLong(if (info.isDirectory) 0L else roundUpToBlock(info.size))  // AllocationSize
+        buf.putInt(info.attributes)                               // FileAttributes
+        buf.putInt(nameBytes.size)                                // FileNameLength
+        buf.putInt(0)                                             // EaSize
+        buf.put(nameBytes)                                        // FileName
+        return buf.array().copyOf(structSize)
+    }
+
+    /** FileBothDirectoryInformation (class 3) — fallback / older clients.
+     *  Fixed header: 94 bytes. */
     fun buildBothDirInfo(info: FileInfo): ByteArray {
         val nameBytes = info.name.toByteArray(StandardCharsets.UTF_16LE)
         val structSize = 94 + nameBytes.size  // aligned

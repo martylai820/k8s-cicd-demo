@@ -29,6 +29,9 @@ class Smb2RequestHandler(
     // NTSTATUS for "object name collision" (file already exists)
     private val STATUS_OBJECT_NAME_COLLISION = 0xC0000035L
 
+    // The dialect actually negotiated with the current client (used by VALIDATE_NEGOTIATE_INFO)
+    @Volatile private var negotiatedDialect: Int = Smb2Constants.SMB2_DIALECT_2_1
+
     // Sessions keyed by sessionId
     private val sessions = ConcurrentHashMap<Long, Smb2Session>()
     private val sessionIdGen = AtomicLong(1)
@@ -102,6 +105,7 @@ class Smb2RequestHandler(
             else                                                  -> Smb2Constants.SMB2_DIALECT_2_0_2
         }
 
+        negotiatedDialect = dialect
         val secBlob = NtlmHandler.buildSpnegoNegotiateToken()
 
         // Response fixed body = 64 bytes, then secBlob
@@ -575,7 +579,14 @@ class Smb2RequestHandler(
             if (!matchesPattern(entry.name, handle.searchPattern)) {
                 handle.dirOffset++; continue
             }
-            val eb = fileSystem.buildBothDirInfo(entry)
+            val eb = when (fileInfoClass) {
+                Smb2Constants.FILE_ID_BOTH_DIR_INFO,   // 37
+                Smb2Constants.FILE_ID_FULL_DIR_INFO    // 38
+                -> fileSystem.buildFileIdBothDirInfo(entry)
+                Smb2Constants.FILE_FULL_DIR_INFO       // 2
+                -> fileSystem.buildFileFullDirInfo(entry)
+                else -> fileSystem.buildBothDirInfo(entry)  // 3 and fallback
+            }
             val aligned = ((eb.size + 7) / 8) * 8
             if (totalSize + aligned > maxOut && entryBuffers.isNotEmpty()) break
             entryBuffers += eb
@@ -794,7 +805,7 @@ class Smb2RequestHandler(
                 .putInt(Smb2Constants.CAP_LARGE_MTU)
                 .put(serverGuid)
                 .putShort(Smb2Constants.NEGOTIATE_SIGNING_ENABLED)
-                .putShort(Smb2Constants.SMB2_DIALECT_2_1.toShort())
+                .putShort(negotiatedDialect.toShort())
                 .array()
 
             val hdr = header.toResponseBytes(Smb2Constants.STATUS_SUCCESS)

@@ -32,7 +32,7 @@ class Smb2Connection(
             val output = socket.getOutputStream()
 
             while (!socket.isClosed) {
-                val message = readMessage(input) ?: break
+                val message = readMessage(input, output) ?: break
                 val responses = processMessage(message)
                 for (resp in responses) {
                     writeMessage(output, resp)
@@ -51,33 +51,60 @@ class Smb2Connection(
 
     /**
      * Read one NetBIOS-framed SMB2 message from the input stream.
-     * Returns null on EOF or error.
+     * Handles NetBIOS Session Request (0x81) by replying with a Positive Response
+     * (0x82) — this is required by clients such as Cyberduck / SMBJ that send the
+     * NBT session establishment step even on non-standard ports.
+     *
+     * Returns null on EOF or unrecoverable error.
      */
-    private fun readMessage(input: InputStream): ByteArray? {
-        // Read 4-byte NetBIOS header
-        val nbHeader = ByteArray(4)
-        if (!readFully(input, nbHeader)) return null
+    private fun readMessage(input: InputStream, output: OutputStream): ByteArray? {
+        while (true) {
+            // Read 4-byte NetBIOS header
+            val nbHeader = ByteArray(4)
+            if (!readFully(input, nbHeader)) return null
 
-        val msgType = nbHeader[0].toInt() and 0xFF
-        if (msgType != 0x00) {
-            Log.w(TAG, "Non-session message type: 0x${msgType.toString(16)}")
-            // Still try to read the length and skip
+            val msgType = nbHeader[0].toInt() and 0xFF
+
+            // 24-bit big-endian length in bytes 1-3
+            val length = ((nbHeader[1].toInt() and 0xFF) shl 16) or
+                         ((nbHeader[2].toInt() and 0xFF) shl 8)  or
+                         (nbHeader[3].toInt() and 0xFF)
+
+            when (msgType) {
+                0x00 -> {  // SESSION MESSAGE — normal SMB2 payload
+                    if (length == 0) return ByteArray(0)
+                    if (length > 16 * 1024 * 1024) {
+                        Log.e(TAG, "Message too large: $length bytes")
+                        return null
+                    }
+                    val data = ByteArray(length)
+                    if (!readFully(input, data)) return null
+                    return data
+                }
+                0x81 -> {  // SESSION REQUEST — consume name fields, reply with positive ack
+                    if (length > 0) {
+                        val names = ByteArray(length.coerceAtMost(512))
+                        if (!readFully(input, names)) return null
+                    }
+                    Log.d(TAG, "NetBIOS SESSION REQUEST — sending POSITIVE RESPONSE")
+                    output.write(byteArrayOf(0x82.toByte(), 0x00, 0x00, 0x00))
+                    output.flush()
+                    // Loop back to read the actual SMBv2 NEGOTIATE
+                }
+                0x85 -> {  // SESSION KEEPALIVE — reply in kind and continue
+                    output.write(byteArrayOf(0x85.toByte(), 0x00, 0x00, 0x00))
+                    output.flush()
+                }
+                else -> {
+                    Log.w(TAG, "Unexpected NetBIOS msg type: 0x${msgType.toString(16)}, skipping $length bytes")
+                    if (length > 0) {
+                        val skip = ByteArray(length.coerceAtMost(16 * 1024 * 1024))
+                        if (!readFully(input, skip)) return null
+                    }
+                    // Loop and try the next framed message
+                }
+            }
         }
-
-        // 24-bit big-endian length in bytes 1-3
-        val length = ((nbHeader[1].toInt() and 0xFF) shl 16) or
-                     ((nbHeader[2].toInt() and 0xFF) shl 8)  or
-                     (nbHeader[3].toInt() and 0xFF)
-
-        if (length == 0) return ByteArray(0)
-        if (length > 16 * 1024 * 1024) {  // Max 16 MB sanity check
-            Log.e(TAG, "Message too large: $length bytes")
-            return null
-        }
-
-        val data = ByteArray(length)
-        if (!readFully(input, data)) return null
-        return data
     }
 
     /**

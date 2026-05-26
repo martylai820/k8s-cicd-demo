@@ -1,0 +1,3 @@
+-keep class com.martylai.smbserver.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*

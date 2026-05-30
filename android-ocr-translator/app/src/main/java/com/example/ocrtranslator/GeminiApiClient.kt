@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Base64
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers

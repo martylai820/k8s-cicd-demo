@@ -140,7 +140,7 @@ class FloatingOverlay(
     fun dismiss() {
         dismissTranslationOverlay()
         fabView?.let {
-            try { windowManager.removeView(it) } catch (_: Exception) {}
+            try { windowManager.removeView(it) } catch (ignored: Exception) {}
             fabView = null
         }
         fabParams = null
@@ -150,7 +150,7 @@ class FloatingOverlay(
 
     private fun dismissTranslationOverlay() {
         translationOverlay?.let {
-            try { windowManager.removeView(it) } catch (_: Exception) {}
+            try { windowManager.removeView(it) } catch (ignored: Exception) {}
             translationOverlay = null
         }
     }
@@ -172,7 +172,7 @@ class FloatingOverlay(
                 if (isDragging) {
                     lp.x = (initialParamX + dx).toInt()
                     lp.y = (initialParamY + dy).toInt()
-                    try { windowManager.updateViewLayout(v, lp) } catch (_: Exception) {}
+                    try { windowManager.updateViewLayout(v, lp) } catch (ignored: Exception) {}
                 }
             }
             MotionEvent.ACTION_UP -> {

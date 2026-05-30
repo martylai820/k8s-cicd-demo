@@ -99,11 +99,9 @@ class ScreenCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> handleStart(intent)
+            ACTION_START -> intent?.let { handleStart(it) }
             ACTION_STOP -> handleStop()
-            else -> {
-                Log.w(TAG, "Unknown action: ${intent?.action}")
-            }
+            else -> Log.w(TAG, "Unknown action: ${intent?.action}")
         }
         return START_NOT_STICKY
     }

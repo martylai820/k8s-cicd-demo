@@ -27,24 +27,16 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
       # ── Android SDK ────────────────────────────────────────────────────────
-      # Step 1: android-actions/setup-android installs cmdline-tools and adds
-      #         sdkmanager to PATH.  We do NOT rely on its 'packages' input
-      #         because its reliability varies across versions.
-      - name: Set up Android SDK (add sdkmanager to PATH)
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # Step 2: Accept licences and install exactly what this project needs.
-      #         sdkmanager is now in PATH thanks to the previous step.
       - name: Accept SDK licences and install platform 35
         run: |
-          yes | sdkmanager --licenses
+          yes | sdkmanager --licenses || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      # Step 3: Write local.properties so Gradle can locate the SDK even if
-      #         ANDROID_HOME is not propagated into the build environment.
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > android-ocr-translator/local.properties
 
@@ -52,28 +44,27 @@ jobs:
       - name: Grant gradlew execute permission
         run: chmod +x android-ocr-translator/gradlew
 
-      # ── Gradle dependency cache ────────────────────────────────────────────
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android-ocr-translator/**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      # ── Step 1: Compile Kotlin only (isolate compile errors clearly) ───────
+      - name: Compile Kotlin sources
+        working-directory: android-ocr-translator
+        run: ./gradlew compileDebugKotlin --no-daemon --no-build-cache
 
-      # ── Build debug APK ────────────────────────────────────────────────────
+      # ── Step 2: Process resources (AAPT) ──────────────────────────────────
+      - name: Process debug resources
+        working-directory: android-ocr-translator
+        run: ./gradlew processDebugResources --no-daemon --no-build-cache
+
+      # ── Step 3: Full debug APK ─────────────────────────────────────────────
       - name: Build debug APK
         working-directory: android-ocr-translator
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --no-build-cache
 
-      # ── Build unsigned release APK ─────────────────────────────────────────
+      # ── Step 4: Release APK ────────────────────────────────────────────────
       - name: Build unsigned release APK
         working-directory: android-ocr-translator
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --no-build-cache
 
-      # ── Upload debug APK artifact ──────────────────────────────────────────
+      # ── Upload artifacts ───────────────────────────────────────────────────
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -82,7 +73,6 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      # ── Upload unsigned release APK artifact ───────────────────────────────
       - name: Upload unsigned release APK
         uses: actions/upload-artifact@v4
         with:

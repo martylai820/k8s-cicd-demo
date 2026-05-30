@@ -48,4 +48,6 @@
     <string name="fab_capture_description">Capture and translate screen</string>
     <string name="overlay_title">OCR Translation</string>
     <string name="close">Close</string>
+    <string name="tap_to_dismiss">Tap anywhere to dismiss</string>
+    <string name="no_text_detected">No text detected — tap to dismiss</string>
 </resources>

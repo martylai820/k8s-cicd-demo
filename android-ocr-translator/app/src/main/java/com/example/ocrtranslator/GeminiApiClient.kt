@@ -16,10 +16,15 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-/**
- * Client for the Google Gemini multimodal API.
- * Sends a screenshot bitmap and receives OCR + translation text.
- */
+data class TextBlock(
+    val original: String,
+    val translation: String,
+    val x: Float,
+    val y: Float,
+    val w: Float,
+    val h: Float
+)
+
 class GeminiApiClient {
 
     companion object {
@@ -38,19 +43,12 @@ class GeminiApiClient {
         .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    /**
-     * Result type returned by [ocrAndTranslate].
-     */
     sealed class Result {
-        data class Success(val text: String) : Result()
+        data class Success(val blocks: List<TextBlock>) : Result()
         data class Error(val message: String, val cause: Throwable? = null) : Result()
     }
 
-    /**
-     * Sends [bitmap] to Gemini for OCR and translation into [targetLanguage].
-     * Must be called from a coroutine; network I/O runs on [Dispatchers.IO].
-     */
-    suspend fun ocrAndTranslate(
+    suspend fun ocrTranslatePositional(
         bitmap: Bitmap,
         apiKey: String,
         targetLanguage: String
@@ -64,16 +62,13 @@ class GeminiApiClient {
             val requestJson = buildRequestJson(base64Image, targetLanguage)
             val url = "$BASE_URL?key=$apiKey"
 
-            val requestBody = requestJson
-                .toRequestBody("application/json; charset=utf-8".toMediaType())
-
+            val requestBody = requestJson.toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
                 .url(url)
                 .post(requestBody)
-                .addHeader("Content-Type", "application/json")
                 .build()
 
-            Log.d(TAG, "Sending request to Gemini API for language: $targetLanguage")
+            Log.d(TAG, "Sending positional OCR request for language: $targetLanguage")
 
             val response = httpClient.newCall(request).execute()
             val responseBody = response.body?.string()
@@ -88,13 +83,9 @@ class GeminiApiClient {
                 return@withContext Result.Error("Empty response from API.")
             }
 
-            val translatedText = parseSuccessResponse(responseBody)
-            if (translatedText.isNullOrBlank()) {
-                return@withContext Result.Error("No text found in the API response.")
-            }
-
-            Log.d(TAG, "Translation successful, text length: ${translatedText.length}")
-            Result.Success(translatedText)
+            val blocks = parsePositionalResponse(responseBody)
+            Log.d(TAG, "Parsed ${blocks.size} text blocks from response")
+            Result.Success(blocks)
 
         } catch (e: IOException) {
             Log.e(TAG, "Network error", e)
@@ -105,68 +96,50 @@ class GeminiApiClient {
         }
     }
 
-    /**
-     * Compresses [bitmap] to JPEG and encodes it as Base64.
-     */
     private fun bitmapToBase64(bitmap: Bitmap): String {
         val outputStream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, outputStream)
-        val bytes = outputStream.toByteArray()
-        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+        return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 
-    /**
-     * Builds the JSON request body for the Gemini multimodal API.
-     */
     private fun buildRequestJson(base64Image: String, targetLanguage: String): String {
-        val prompt = buildString {
-            append("Please perform OCR on this image to extract all visible text, ")
-            append("then translate the extracted text to $targetLanguage. ")
-            append("Format your response as follows:\n")
-            append("--- Original Text ---\n")
-            append("[the extracted original text here]\n\n")
-            append("--- $targetLanguage Translation ---\n")
-            append("[the translated text here]\n\n")
-            append("If there is no text in the image, respond with: 'No text detected in the image.' ")
-            append("Keep the formatting clean and readable.")
-        }
+        val prompt = """
+            You are an OCR and translation assistant. Analyze this screenshot image.
+            Find ALL visible text blocks on screen and translate them to $targetLanguage.
+
+            Return ONLY a valid JSON array — no markdown, no code fences, no extra text:
+            [{"original":"text here","translation":"translated text","x":0.10,"y":0.05,"w":0.50,"h":0.04}]
+
+            Field definitions (all fractions of image dimensions, range 0.0–1.0):
+              x = left edge of the text block
+              y = top edge of the text block
+              w = width of the text block
+              h = height of the text block
+
+            Group text on the same line/sentence into a single block.
+            If no text is visible, return an empty array: []
+        """.trimIndent()
 
         val inlineData = JsonObject().apply {
             addProperty("mime_type", "image/jpeg")
             addProperty("data", base64Image)
         }
+        val imagePart = JsonObject().apply { add("inline_data", inlineData) }
+        val textPart = JsonObject().apply { addProperty("text", prompt) }
 
-        val imagePart = JsonObject().apply {
-            add("inline_data", inlineData)
-        }
+        val parts = com.google.gson.JsonArray().apply { add(imagePart); add(textPart) }
+        val content = JsonObject().apply { add("parts", parts) }
+        val contents = com.google.gson.JsonArray().apply { add(content) }
 
-        val textPart = JsonObject().apply {
-            addProperty("text", prompt)
-        }
-
-        val partsArray = com.google.gson.JsonArray().apply {
-            add(imagePart)
-            add(textPart)
-        }
-
-        val content = JsonObject().apply {
-            add("parts", partsArray)
-        }
-
-        val contentsArray = com.google.gson.JsonArray().apply {
-            add(content)
-        }
-
-        // Safety settings to minimize refusals on benign screenshot content
         val safetySettings = com.google.gson.JsonArray().apply {
             listOf(
                 "HARM_CATEGORY_HARASSMENT",
                 "HARM_CATEGORY_HATE_SPEECH",
                 "HARM_CATEGORY_SEXUALLY_EXPLICIT",
                 "HARM_CATEGORY_DANGEROUS_CONTENT"
-            ).forEach { category ->
+            ).forEach { cat ->
                 add(JsonObject().apply {
-                    addProperty("category", category)
+                    addProperty("category", cat)
                     addProperty("threshold", "BLOCK_ONLY_HIGH")
                 })
             }
@@ -174,49 +147,68 @@ class GeminiApiClient {
 
         val generationConfig = JsonObject().apply {
             addProperty("temperature", 0.1)
-            addProperty("maxOutputTokens", 2048)
+            addProperty("maxOutputTokens", 4096)
         }
 
-        val root = JsonObject().apply {
-            add("contents", contentsArray)
+        return gson.toJson(JsonObject().apply {
+            add("contents", contents)
             add("safetySettings", safetySettings)
             add("generationConfig", generationConfig)
-        }
-
-        return gson.toJson(root)
+        })
     }
 
-    /**
-     * Extracts the translated text from a successful Gemini API response JSON.
-     * Returns null if the expected structure is missing.
-     */
-    private fun parseSuccessResponse(responseBody: String): String? {
+    private fun parsePositionalResponse(responseBody: String): List<TextBlock> {
         return try {
             val root = JsonParser.parseString(responseBody).asJsonObject
-            val candidates = root.getAsJsonArray("candidates")
-            if (candidates == null || candidates.size() == 0) return null
+            val candidates = root.getAsJsonArray("candidates") ?: return emptyList()
+            if (candidates.size() == 0) return emptyList()
 
-            val firstCandidate = candidates[0].asJsonObject
-            val content = firstCandidate.getAsJsonObject("content") ?: return null
-            val parts = content.getAsJsonArray("parts") ?: return null
-            if (parts.size() == 0) return null
+            val rawText = candidates[0].asJsonObject
+                .getAsJsonObject("content")
+                ?.getAsJsonArray("parts")
+                ?.get(0)?.asJsonObject
+                ?.get("text")?.asString ?: return emptyList()
 
-            parts[0].asJsonObject.get("text")?.asString
+            // Strip markdown code fences Gemini sometimes adds despite instructions
+            val cleaned = rawText.trim()
+                .replace(Regex("^```json\\s*", RegexOption.MULTILINE), "")
+                .replace(Regex("^```\\s*", RegexOption.MULTILINE), "")
+                .replace(Regex("\\s*```\\s*$"), "")
+                .trim()
+
+            val start = cleaned.indexOf('[')
+            val end = cleaned.lastIndexOf(']')
+            if (start < 0 || end <= start) return emptyList()
+
+            JsonParser.parseString(cleaned.substring(start, end + 1)).asJsonArray
+                .mapNotNull { element ->
+                    try {
+                        val obj = element.asJsonObject
+                        TextBlock(
+                            original = obj.get("original")?.asString ?: return@mapNotNull null,
+                            translation = obj.get("translation")?.asString ?: return@mapNotNull null,
+                            x = obj.get("x")?.asFloat ?: return@mapNotNull null,
+                            y = obj.get("y")?.asFloat ?: return@mapNotNull null,
+                            w = obj.get("w")?.asFloat ?: return@mapNotNull null,
+                            h = obj.get("h")?.asFloat ?: return@mapNotNull null
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Skipping malformed block: $element", e)
+                        null
+                    }
+                }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse success response", e)
-            null
+            Log.e(TAG, "Failed to parse positional response", e)
+            emptyList()
         }
     }
 
-    /**
-     * Extracts an error message from a failed Gemini API response JSON.
-     */
     private fun parseErrorMessage(responseBody: String?): String {
         if (responseBody.isNullOrBlank()) return "Unknown error"
         return try {
-            val root = JsonParser.parseString(responseBody).asJsonObject
-            val error = root.getAsJsonObject("error")
-            error?.get("message")?.asString ?: responseBody.take(200)
+            JsonParser.parseString(responseBody).asJsonObject
+                .getAsJsonObject("error")
+                ?.get("message")?.asString ?: responseBody.take(200)
         } catch (e: Exception) {
             responseBody.take(200)
         }

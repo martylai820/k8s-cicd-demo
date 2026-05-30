@@ -30,8 +30,13 @@ jobs:
           cache: gradle
 
       # ── Android SDK ────────────────────────────────────────────────────────
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # ubuntu-latest ships with Android SDK; accept licences and install the
+      # specific platform + build-tools versions the project requires.
+      - name: Accept Android SDK licences
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install required SDK components
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       # ── Gradle wrapper executable permission ───────────────────────────────
       - name: Grant gradlew execute permission
@@ -44,7 +49,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('android-ocr-translator/**/*.gradle.kts') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android-ocr-translator/**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 

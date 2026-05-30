@@ -194,7 +194,8 @@ class ScreenCaptureService : Service() {
 
     /**
      * Acquires the latest frame from [ImageReader], converts it to a [Bitmap],
-     * and calls the Gemini API for OCR/translation.
+     * sends it to Gemini for positional OCR/translation, then shows each
+     * text block overlaid directly on its original screen position.
      */
     private fun captureAndTranslate() {
         val reader = imageReader
@@ -220,7 +221,7 @@ class ScreenCaptureService : Service() {
                 return@launch
             }
 
-            val result = geminiClient.ocrAndTranslate(
+            val result = geminiClient.ocrTranslatePositional(
                 bitmap = bitmap,
                 apiKey = apiKey,
                 targetLanguage = settingsManager.targetLanguage
@@ -229,7 +230,10 @@ class ScreenCaptureService : Service() {
 
             launch(Dispatchers.Main) {
                 when (result) {
-                    is GeminiApiClient.Result.Success -> floatingOverlay.showResult(result.text)
+                    is GeminiApiClient.Result.Success -> {
+                        floatingOverlay.hideLoading()
+                        floatingOverlay.showTranslations(result.blocks)
+                    }
                     is GeminiApiClient.Result.Error -> floatingOverlay.showError(result.message)
                 }
             }

@@ -1,20 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Floating action button shown on top of all other apps.
-  Tapping it triggers a screen capture + translation.
-  Dragging repositions it anywhere on screen.
+  Floating action button overlay. A FrameLayout so a loading ProgressBar
+  can be layered on top of the FAB during the Gemini API call.
 -->
-<com.google.android.material.floatingactionbutton.FloatingActionButton
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/fabCapture"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:src="@drawable/ic_translate"
-    android:contentDescription="@string/fab_capture_description"
-    app:backgroundTint="?attr/colorPrimary"
-    app:tint="@android:color/white"
-    app:fabSize="normal"
-    app:elevation="8dp"
-    app:pressedTranslationZ="12dp"
-    app:rippleColor="@android:color/white" />
+    android:padding="4dp">
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fabCapture"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@drawable/ic_translate"
+        android:contentDescription="@string/fab_capture_description"
+        app:backgroundTint="?attr/colorPrimary"
+        app:tint="@android:color/white"
+        app:fabSize="normal"
+        app:elevation="8dp"
+        app:pressedTranslationZ="12dp"
+        app:rippleColor="@android:color/white" />
+
+    <ProgressBar
+        android:id="@+id/fabLoading"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:visibility="gone"
+        android:indeterminate="true"
+        android:indeterminateTint="@android:color/white" />
+
+</FrameLayout>

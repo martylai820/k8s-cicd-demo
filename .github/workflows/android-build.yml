@@ -30,15 +30,23 @@ jobs:
           cache: gradle
 
       # ── Android SDK ────────────────────────────────────────────────────────
-      # android-actions/setup-android installs cmdline-tools and adds sdkmanager
-      # to PATH. The packages input installs specific SDK components in the same
-      # step, avoiding the "sdkmanager: command not found" error that occurs when
-      # calling sdkmanager directly on ubuntu-latest before PATH is configured.
-      - name: Set up Android SDK
+      # Step 1: android-actions/setup-android installs cmdline-tools and adds
+      #         sdkmanager to PATH.  We do NOT rely on its 'packages' input
+      #         because its reliability varies across versions.
+      - name: Set up Android SDK (add sdkmanager to PATH)
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
-          accept-android-sdk-licenses: true
+
+      # Step 2: Accept licences and install exactly what this project needs.
+      #         sdkmanager is now in PATH thanks to the previous step.
+      - name: Accept SDK licences and install platform 35
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      # Step 3: Write local.properties so Gradle can locate the SDK even if
+      #         ANDROID_HOME is not propagated into the build environment.
+      - name: Write local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > android-ocr-translator/local.properties
 
       # ── Gradle wrapper executable permission ───────────────────────────────
       - name: Grant gradlew execute permission

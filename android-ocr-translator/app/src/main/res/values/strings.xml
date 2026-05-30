@@ -35,6 +35,7 @@
     <string name="error_api_key_empty">Please enter your Gemini API key</string>
     <string name="error_not_ready">Screen capture not ready. Please restart the service.</string>
     <string name="error_capture_failed">Failed to capture screen. Please try again.</string>
+    <string name="error_prefix">⚠ %1$s</string>
 
     <!-- Notification -->
     <string name="notification_channel_name">Screen Capture</string>

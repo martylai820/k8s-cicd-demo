@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App info -->
+    <string name="app_name">OCR Translator</string>
+    <string name="subtitle">Capture screen, translate with AI</string>
+
+    <!-- Main Activity - Sections -->
+    <string name="section_api_settings">Gemini API Settings</string>
+    <string name="section_language">Translation Language</string>
+
+    <!-- Main Activity - Input hints -->
+    <string name="hint_api_key">Gemini API Key</string>
+    <string name="hint_target_language">Target Language</string>
+    <string name="api_key_hint_description">Get your free API key at aistudio.google.com</string>
+
+    <!-- Main Activity - Buttons -->
+    <string name="start_capture">Start Capture</string>
+    <string name="stop_capture">Stop Capture</string>
+
+    <!-- Status messages -->
+    <string name="status_idle">Idle — tap Start Capture to begin</string>
+    <string name="status_running">Running — floating button visible on screen</string>
+
+    <!-- How to use -->
+    <string name="how_to_use_title">How to use</string>
+    <string name="how_to_use_body">1. Enter your Gemini API key above.\n2. Select the target language.\n3. Tap \"Start Capture\" and grant permissions.\n4. A floating button will appear on your screen.\n5. Navigate to any app, then tap the floating button to capture and translate text on screen.\n6. Drag the floating button to reposition it.</string>
+
+    <!-- Permissions -->
+    <string name="requesting_overlay_permission">Please grant \'Draw over other apps\' permission</string>
+    <string name="overlay_permission_required">Overlay permission is required to show the floating button</string>
+    <string name="notification_permission_denied">Notification permission denied — service notification may not appear</string>
+    <string name="media_projection_denied">Screen capture permission was denied</string>
+
+    <!-- Errors -->
+    <string name="error_api_key_empty">Please enter your Gemini API key</string>
+    <string name="error_not_ready">Screen capture not ready. Please restart the service.</string>
+    <string name="error_capture_failed">Failed to capture screen. Please try again.</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_name">Screen Capture</string>
+    <string name="notification_channel_description">Used while screen capture is active</string>
+    <string name="notification_title">OCR Translator is running</string>
+    <string name="notification_text">Tap the floating button to capture and translate</string>
+    <string name="action_stop">Stop</string>
+
+    <!-- Floating overlay -->
+    <string name="fab_capture_description">Capture and translate screen</string>
+    <string name="overlay_title">OCR Translation</string>
+    <string name="close">Close</string>
+</resources>

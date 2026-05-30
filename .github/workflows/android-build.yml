@@ -47,7 +47,19 @@ jobs:
       # ── Step 1: Compile Kotlin only (isolate compile errors clearly) ───────
       - name: Compile Kotlin sources
         working-directory: android-ocr-translator
-        run: ./gradlew compileDebugKotlin --no-daemon --no-build-cache
+        run: |
+          set -o pipefail
+          ./gradlew compileDebugKotlin --no-daemon --no-build-cache --info 2>&1 | tee /tmp/kotlin.log
+          RESULT=${PIPESTATUS[0]}
+          if [ $RESULT -ne 0 ]; then
+            echo ""
+            echo "========================================"
+            echo "KOTLIN COMPILER ERRORS:"
+            echo "========================================"
+            grep -E "^e:|error:|Unresolved reference|Type mismatch|None of the following|Overload resolution|is not a subtype" /tmp/kotlin.log | head -40
+            echo "========================================"
+          fi
+          exit $RESULT
 
       # ── Step 2: Process resources (AAPT) ──────────────────────────────────
       - name: Process debug resources

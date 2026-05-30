@@ -14,21 +14,21 @@ class SettingsManager(context: Context) {
         private const val KEY_API_KEY = "gemini_api_key"
         private const val KEY_TARGET_LANGUAGE = "target_language"
 
-        // Supported target languages displayed in the UI
+        // Supported target languages — bilingual labels so Gemini is unambiguous
         val SUPPORTED_LANGUAGES = listOf(
-            "Traditional Chinese",
-            "Simplified Chinese",
+            "繁體中文 (Traditional Chinese)",
+            "简体中文 (Simplified Chinese)",
             "English",
-            "Japanese",
-            "Korean",
-            "French",
-            "Spanish",
-            "German",
-            "Portuguese",
-            "Arabic"
+            "日本語 (Japanese)",
+            "한국어 (Korean)",
+            "Français (French)",
+            "Español (Spanish)",
+            "Deutsch (German)",
+            "Português (Portuguese)",
+            "العربية (Arabic)"
         )
 
-        val DEFAULT_LANGUAGE = SUPPORTED_LANGUAGES[0] // Traditional Chinese
+        val DEFAULT_LANGUAGE = SUPPORTED_LANGUAGES[0] // 繁體中文
     }
 
     private val prefs: SharedPreferences =

@@ -105,7 +105,8 @@ class GeminiApiClient {
     private fun buildRequestJson(base64Image: String, targetLanguage: String): String {
         val prompt = """
             You are an OCR and translation assistant. Analyze this screenshot image.
-            Find ALL visible text blocks on screen and translate them to $targetLanguage.
+            Find ALL visible text blocks on screen and translate EACH ONE into $targetLanguage.
+            You MUST output the translation field in $targetLanguage — do not use any other language.
 
             Return ONLY a valid JSON array — no markdown, no code fences, no extra text:
             [{"original":"text here","translation":"translated text","x":0.10,"y":0.05,"w":0.50,"h":0.04}]

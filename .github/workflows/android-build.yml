@@ -30,13 +30,15 @@ jobs:
           cache: gradle
 
       # ── Android SDK ────────────────────────────────────────────────────────
-      # ubuntu-latest ships with Android SDK; accept licences and install the
-      # specific platform + build-tools versions the project requires.
-      - name: Accept Android SDK licences
-        run: yes | sdkmanager --licenses || true
-
-      - name: Install required SDK components
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      # android-actions/setup-android installs cmdline-tools and adds sdkmanager
+      # to PATH. The packages input installs specific SDK components in the same
+      # step, avoiding the "sdkmanager: command not found" error that occurs when
+      # calling sdkmanager directly on ubuntu-latest before PATH is configured.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          accept-android-sdk-licenses: true
 
       # ── Gradle wrapper executable permission ───────────────────────────────
       - name: Grant gradlew execute permission

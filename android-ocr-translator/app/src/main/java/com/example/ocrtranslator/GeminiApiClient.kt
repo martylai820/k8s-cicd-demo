@@ -17,15 +17,6 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-data class TextBlock(
-    val original: String,
-    val translation: String,
-    val x: Float,
-    val y: Float,
-    val w: Float,
-    val h: Float
-)
-
 class GeminiApiClient {
 
     companion object {
@@ -44,19 +35,14 @@ class GeminiApiClient {
         .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    sealed class Result {
-        data class Success(val blocks: List<TextBlock>) : Result()
-        data class Error(val message: String, val cause: Throwable? = null) : Result()
-    }
-
     suspend fun ocrTranslatePositional(
         bitmap: Bitmap,
         apiKey: String,
         targetLanguage: String
-    ): Result = withContext(Dispatchers.IO) {
+    ): OcrResult = withContext(Dispatchers.IO) {
         try {
             if (apiKey.isBlank()) {
-                return@withContext Result.Error("API key is not configured.")
+                return@withContext OcrResult.Failure("API key is not configured.")
             }
 
             val base64Image = bitmapToBase64(bitmap)
@@ -69,7 +55,7 @@ class GeminiApiClient {
                 .post(requestBody)
                 .build()
 
-            Log.d(TAG, "Sending positional OCR request for language: $targetLanguage")
+            Log.d(TAG, "Sending OCR request for language: $targetLanguage")
 
             val response = httpClient.newCall(request).execute()
             val responseBody = response.body?.string()
@@ -77,23 +63,23 @@ class GeminiApiClient {
             if (!response.isSuccessful) {
                 val errorMsg = parseErrorMessage(responseBody)
                 Log.e(TAG, "API error ${response.code}: $errorMsg")
-                return@withContext Result.Error("API error (${response.code}): $errorMsg")
+                return@withContext OcrResult.Failure("API error (${response.code}): $errorMsg")
             }
 
             if (responseBody.isNullOrBlank()) {
-                return@withContext Result.Error("Empty response from API.")
+                return@withContext OcrResult.Failure("Empty response from API.")
             }
 
             val blocks = parsePositionalResponse(responseBody)
-            Log.d(TAG, "Parsed ${blocks.size} text blocks from response")
-            Result.Success(blocks)
+            Log.d(TAG, "Parsed ${blocks.size} text blocks")
+            OcrResult.Success(blocks)
 
         } catch (e: IOException) {
             Log.e(TAG, "Network error", e)
-            Result.Error("Network error: ${e.message}", e)
+            OcrResult.Failure("Network error: ${e.message}", e)
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected error", e)
-            Result.Error("Unexpected error: ${e.message}", e)
+            OcrResult.Failure("Unexpected error: ${e.message}", e)
         }
     }
 
@@ -112,13 +98,13 @@ class GeminiApiClient {
             Return ONLY a valid JSON array — no markdown, no code fences, no extra text:
             [{"original":"text here","translation":"translated text","x":0.10,"y":0.05,"w":0.50,"h":0.04}]
 
-            Field definitions (all fractions of image dimensions, range 0.0–1.0):
+            Field definitions (all fractions of image dimensions, range 0.0-1.0):
               x = left edge of the text block
               y = top edge of the text block
               w = width of the text block
               h = height of the text block
 
-            Group text on the same line/sentence into a single block.
+            Group text on the same line into a single block.
             If no text is visible, return an empty array: []
         """.trimIndent()
 
@@ -129,11 +115,11 @@ class GeminiApiClient {
         val imagePart = JsonObject().apply { add("inline_data", inlineData) }
         val textPart = JsonObject().apply { addProperty("text", prompt) }
 
-        val parts = com.google.gson.JsonArray().apply { add(imagePart); add(textPart) }
+        val parts = JsonArray().apply { add(imagePart); add(textPart) }
         val content = JsonObject().apply { add("parts", parts) }
-        val contents = com.google.gson.JsonArray().apply { add(content) }
+        val contents = JsonArray().apply { add(content) }
 
-        val safetySettings = com.google.gson.JsonArray().apply {
+        val safetySettings = JsonArray().apply {
             listOf(
                 "HARM_CATEGORY_HARASSMENT",
                 "HARM_CATEGORY_HATE_SPEECH",
@@ -152,11 +138,12 @@ class GeminiApiClient {
             addProperty("maxOutputTokens", 4096)
         }
 
-        return gson.toJson(JsonObject().apply {
+        val root = JsonObject().apply {
             add("contents", contents)
             add("safetySettings", safetySettings)
             add("generationConfig", generationConfig)
-        })
+        }
+        return gson.toJson(root)
     }
 
     private fun parsePositionalResponse(responseBody: String): List<TextBlock> {
@@ -171,7 +158,6 @@ class GeminiApiClient {
                 ?.get(0)?.asJsonObject
                 ?.get("text")?.asString ?: return emptyList()
 
-            // Strip markdown code fences Gemini sometimes adds despite instructions
             val cleaned = rawText.trim()
                 .replace(Regex("^```json\\s*", RegexOption.MULTILINE), "")
                 .replace(Regex("^```\\s*", RegexOption.MULTILINE), "")
@@ -200,7 +186,7 @@ class GeminiApiClient {
                     }
                 }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse positional response", e)
+            Log.e(TAG, "Failed to parse response", e)
             emptyList()
         }
     }

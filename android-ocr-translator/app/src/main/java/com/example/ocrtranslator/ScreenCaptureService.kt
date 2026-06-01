@@ -228,11 +228,11 @@ class ScreenCaptureService : Service() {
 
             launch(Dispatchers.Main) {
                 when (result) {
-                    is GeminiApiClient.Result.Success -> {
+                    is OcrResult.Success -> {
                         floatingOverlay.hideLoading()
                         floatingOverlay.showTranslations(result.blocks)
                     }
-                    is GeminiApiClient.Result.Error -> floatingOverlay.showError(result.message)
+                    is OcrResult.Failure -> floatingOverlay.showError(result.message)
                 }
             }
         }

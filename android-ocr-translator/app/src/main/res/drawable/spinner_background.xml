@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Background drawable for the language Spinner.
+  Draws an outlined rounded rectangle (matches the Material 3 OutlinedBox style)
+  with a dropdown arrow at the right edge.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Outlined rounded rectangle -->
+    <item>
+        <shape android:shape="rectangle">
+            <stroke android:width="1dp" android:color="?attr/colorOutline" />
+            <corners android:radius="4dp" />
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+    <!-- Dropdown arrow aligned to the end -->
+    <item
+        android:gravity="end|center_vertical"
+        android:right="12dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</layer-list>

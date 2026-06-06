@@ -8,17 +8,18 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.Toast
-import androidx.appcompat.view.ContextThemeWrapper
-import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlin.math.abs
 
 /**
  * Manages two floating WindowManager layers:
- *  1. A draggable FAB the user taps to trigger screen capture + translation.
- *  2. A full-screen [TranslationOverlayView] drawn on top of the live screen,
- *     with each text block replaced by its translation — like Google Lens.
+ *  1. A draggable button the user taps to trigger screen capture + translation.
+ *  2. A full-screen [TranslationOverlayView] drawn on top of the live screen.
+ *
+ * Uses applicationContext for inflation to avoid Material3 theme-resolution
+ * failures that occur with ContextThemeWrapper in a WindowManager/Service context.
  */
 class FloatingOverlay(
     context: Context,
@@ -30,7 +31,6 @@ class FloatingOverlay(
     }
 
     private val appContext: Context = context.applicationContext
-    private val themedContext: Context = ContextThemeWrapper(context, R.style.Theme_OCRTranslator)
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val overlayType = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
@@ -38,6 +38,9 @@ class FloatingOverlay(
 
     private var fabView: View? = null
     private var fabParams: WindowManager.LayoutParams? = null
+    private var fabButton: ImageButton? = null
+    private var fabSpinner: ProgressBar? = null
+
     private var isDragging = false
     private var initialTouchX = 0f
     private var initialTouchY = 0f
@@ -53,8 +56,18 @@ class FloatingOverlay(
     fun show() {
         if (fabView != null) return
 
-        val fab = LayoutInflater.from(themedContext).inflate(R.layout.overlay_fab, null)
-        fabView = fab
+        val root: View
+        try {
+            root = LayoutInflater.from(appContext).inflate(R.layout.overlay_fab, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inflate overlay_fab layout", e)
+            Toast.makeText(appContext, "懸浮按鈕初始化失敗：${e.message}", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        fabButton = root.findViewById(R.id.fabCapture)
+        fabSpinner = root.findViewById(R.id.fabLoading)
+        fabView = root
 
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -68,46 +81,48 @@ class FloatingOverlay(
             y = 300
         }
         fabParams = lp
-        fab.setOnTouchListener { v, event -> handleFabTouch(v, event) }
+        root.setOnTouchListener { v, event -> handleFabTouch(v, event) }
 
         try {
-            windowManager.addView(fab, lp)
+            windowManager.addView(root, lp)
+            Log.i(TAG, "FAB overlay added successfully")
+            Toast.makeText(
+                appContext,
+                "✓ 懸浮按鈕已出現！找螢幕左側紫色圓形按鈕，點它開始翻譯",
+                Toast.LENGTH_LONG
+            ).show()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add FAB overlay", e)
+            Log.e(TAG, "Failed to add FAB overlay to WindowManager", e)
+            Toast.makeText(appContext, "懸浮視窗失敗（無權限？）：${e.message}", Toast.LENGTH_LONG).show()
+            fabView = null
+            fabButton = null
+            fabSpinner = null
         }
     }
 
-    /** Dims the FAB and shows a spinner while the Gemini API call is in flight. */
+    /** Dims the button and shows a spinner while the Gemini API call is in flight. */
     fun showLoading() {
-        fabView?.apply {
-            findViewById<FloatingActionButton>(R.id.fabCapture)?.apply {
-                isEnabled = false
-                alpha = 0.45f
-            }
-            findViewById<ProgressBar>(R.id.fabLoading)?.visibility = View.VISIBLE
+        fabButton?.apply {
+            isEnabled = false
+            alpha = 0.45f
         }
+        fabSpinner?.visibility = View.VISIBLE
     }
 
-    /** Restores the FAB to its interactive state. */
+    /** Restores the button to its interactive state. */
     fun hideLoading() {
-        fabView?.apply {
-            findViewById<FloatingActionButton>(R.id.fabCapture)?.apply {
-                isEnabled = true
-                alpha = 1f
-            }
-            findViewById<ProgressBar>(R.id.fabLoading)?.visibility = View.GONE
+        fabButton?.apply {
+            isEnabled = true
+            alpha = 1f
         }
+        fabSpinner?.visibility = View.GONE
     }
 
-    /**
-     * Shows a full-screen overlay with each [TextBlock] drawn directly over
-     * the corresponding text region. Tap anywhere to dismiss.
-     */
     fun showTranslations(blocks: List<TextBlock>) {
         dismissTranslationOverlay()
 
-        val dm = themedContext.resources.displayMetrics
-        val overlay = TranslationOverlayView(themedContext).apply {
+        val dm = appContext.resources.displayMetrics
+        val overlay = TranslationOverlayView(appContext).apply {
             setBlocks(blocks)
             onDismiss = { dismissTranslationOverlay() }
         }
@@ -142,6 +157,8 @@ class FloatingOverlay(
         fabView?.let {
             try { windowManager.removeView(it) } catch (ignored: Exception) {}
             fabView = null
+            fabButton = null
+            fabSpinner = null
         }
         fabParams = null
     }

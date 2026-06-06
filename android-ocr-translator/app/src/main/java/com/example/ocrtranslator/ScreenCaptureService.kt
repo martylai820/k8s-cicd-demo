@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -15,6 +16,7 @@ import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -24,13 +26,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/**
- * Foreground service that:
- *  1. Creates a [MediaProjection] virtual display to capture the screen.
- *  2. Shows a draggable floating overlay button via [FloatingOverlay].
- *  3. On user tap: grabs the latest [ImageReader] frame, converts it to a [Bitmap],
- *     sends it to [GeminiApiClient], and displays the translation in [FloatingOverlay].
- */
 class ScreenCaptureService : Service() {
 
     companion object {
@@ -45,7 +40,6 @@ class ScreenCaptureService : Service() {
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_RESULT_DATA = "result_data"
 
-        /** True while the service is actively running. Read from [MainActivity.onResume]. */
         @Volatile
         var isRunning = false
             private set
@@ -76,7 +70,6 @@ class ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
 
-    // Screen metrics cached at startup
     private var screenWidth = 0
     private var screenHeight = 0
     private var screenDensity = 0
@@ -89,7 +82,6 @@ class ScreenCaptureService : Service() {
         geminiClient = GeminiApiClient()
 
         floatingOverlay = FloatingOverlay(this) {
-            // Called when the user taps the floating capture button
             captureAndTranslate()
         }
 
@@ -99,7 +91,7 @@ class ScreenCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> intent?.let { handleStart(it) }
+            ACTION_START -> intent.let { handleStart(it) }
             ACTION_STOP -> handleStop()
             else -> Log.w(TAG, "Unknown action: ${intent?.action}")
         }
@@ -120,6 +112,7 @@ class ScreenCaptureService : Service() {
 
     private fun handleStart(intent: Intent) {
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+        @Suppress("DEPRECATION")
         val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)
 
         if (resultCode == -1 || resultData == null) {
@@ -128,13 +121,38 @@ class ScreenCaptureService : Service() {
             return
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification())
+        // Android 10+ requires the foreground service type to match the manifest declaration.
+        // Omitting it on Android 13+ throws MissingForegroundServiceTypeException.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
         isRunning = true
 
         val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjection = mpManager.getMediaProjection(resultCode, resultData)
-        mediaProjection?.registerCallback(projectionCallback, null)
+        val projection = try {
+            mpManager.getMediaProjection(resultCode, resultData)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "getMediaProjection failed — missing foreground type or stale token", e)
+            isRunning = false
+            stopSelf()
+            return
+        }
 
+        if (projection == null) {
+            Log.e(TAG, "MediaProjection is null")
+            isRunning = false
+            stopSelf()
+            return
+        }
+
+        mediaProjection = projection
+        projection.registerCallback(projectionCallback, null)
         setupImageReader()
         floatingOverlay.show()
 
@@ -150,7 +168,6 @@ class ScreenCaptureService : Service() {
     // ── MediaProjection setup ──────────────────────────────────────────────────
 
     private fun setupImageReader() {
-        // Capture at a reduced resolution to keep API payload small
         val captureWidth = screenWidth.coerceAtMost(1080)
         val captureHeight = (screenHeight * (captureWidth.toFloat() / screenWidth)).toInt()
 
@@ -190,11 +207,6 @@ class ScreenCaptureService : Service() {
 
     // ── Screen capture + translation ───────────────────────────────────────────
 
-    /**
-     * Acquires the latest frame from [ImageReader], converts it to a [Bitmap],
-     * sends it to Gemini for positional OCR/translation, then shows each
-     * text block overlaid directly on its original screen position.
-     */
     private fun captureAndTranslate() {
         val reader = imageReader
         if (reader == null) {
@@ -238,10 +250,6 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    /**
-     * Tries to acquire the most recent [Image] from [reader] and converts it to a [Bitmap].
-     * Returns null if no frame is available yet or on any error.
-     */
     private fun acquireLatestBitmap(reader: ImageReader): Bitmap? {
         var image: Image? = null
         return try {
@@ -266,7 +274,6 @@ class ScreenCaptureService : Service() {
             )
             bitmap.copyPixelsFromBuffer(buffer)
 
-            // Crop to exact screen size, removing any row-padding artefacts
             if (rowPadding > 0) {
                 Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height).also {
                     bitmap.recycle()

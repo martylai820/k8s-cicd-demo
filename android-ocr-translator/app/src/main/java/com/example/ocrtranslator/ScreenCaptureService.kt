@@ -90,6 +90,21 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // startForeground() MUST be called before any early return when this service was
+        // launched via startForegroundService(). Calling stopSelf() without it first
+        // throws ForegroundServiceDidNotStartInTimeException in the calling process.
+        if (intent?.action == ACTION_START) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, buildNotification())
+            }
+        }
+
         try {
             when {
                 intent == null -> Log.w(TAG, "Null intent")
@@ -105,6 +120,7 @@ class ScreenCaptureService : Service() {
                 android.widget.Toast.LENGTH_LONG
             ).show()
             isRunning = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
         return START_NOT_STICKY
@@ -123,28 +139,26 @@ class ScreenCaptureService : Service() {
     // ── Start / Stop handlers ──────────────────────────────────────────────────
 
     private fun handleStart(intent: Intent) {
+        // startForeground() was already called in onStartCommand() before this method.
+        isRunning = true
+
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
-        @Suppress("DEPRECATION")
-        val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)
+        // Use the typed overload on Android 13+ to avoid returning null via ClassCastException.
+        val resultData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(EXTRA_RESULT_DATA)
+        }
 
         if (resultCode == -1 || resultData == null) {
-            Log.e(TAG, "Invalid MediaProjection data; stopping service.")
+            Log.e(TAG, "Invalid MediaProjection data (code=$resultCode data=$resultData); stopping.")
+            android.widget.Toast.makeText(this, "MediaProjection 資料無效，請重試", android.widget.Toast.LENGTH_LONG).show()
+            isRunning = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
-
-        // Android 10+ requires the foreground service type to match the manifest declaration.
-        // Omitting it on Android 13+ throws MissingForegroundServiceTypeException.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                buildNotification(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, buildNotification())
-        }
-        isRunning = true
 
         val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val projection = try {

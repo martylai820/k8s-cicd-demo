@@ -92,6 +92,23 @@ class MainActivity : AppCompatActivity() {
         setupStartStopButton()
         observeViewModel()
         requestNotificationPermissionIfNeeded()
+        showLastCrashIfAny()
+    }
+
+    /**
+     * If the app crashed last time, [App]'s uncaught-exception handler saved
+     * the stack trace. Show it so the failure is diagnosable on-device.
+     */
+    private fun showLastCrashIfAny() {
+        val prefs = getSharedPreferences(App.PREFS_NAME, MODE_PRIVATE)
+        val crash = prefs.getString(App.KEY_LAST_CRASH, null) ?: return
+        prefs.edit().remove(App.KEY_LAST_CRASH).apply()
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("上次異常結束的原因")
+            .setMessage(crash.take(2000))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     override fun onResume() {

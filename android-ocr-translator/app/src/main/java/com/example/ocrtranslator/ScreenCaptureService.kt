@@ -90,10 +90,22 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START -> intent.let { handleStart(it) }
-            ACTION_STOP -> handleStop()
-            else -> Log.w(TAG, "Unknown action: ${intent?.action}")
+        try {
+            when {
+                intent == null -> Log.w(TAG, "Null intent")
+                intent.action == ACTION_START -> handleStart(intent)
+                intent.action == ACTION_STOP -> handleStop()
+                else -> Log.w(TAG, "Unknown action: ${intent.action}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal error during service start", e)
+            android.widget.Toast.makeText(
+                this,
+                "服務啟動失敗：${e.javaClass.simpleName}: ${e.message}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            isRunning = false
+            stopSelf()
         }
         return START_NOT_STICKY
     }

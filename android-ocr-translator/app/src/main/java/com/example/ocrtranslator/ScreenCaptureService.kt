@@ -142,7 +142,8 @@ class ScreenCaptureService : Service() {
         // startForeground() was already called in onStartCommand() before this method.
         isRunning = true
 
-        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+        // Note: Activity.RESULT_OK == -1, so -1 must NOT be used as the "invalid" sentinel.
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, android.app.Activity.RESULT_CANCELED)
         // Use the typed overload on Android 13+ to avoid returning null via ClassCastException.
         val resultData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
@@ -151,7 +152,7 @@ class ScreenCaptureService : Service() {
             intent.getParcelableExtra(EXTRA_RESULT_DATA)
         }
 
-        if (resultCode == -1 || resultData == null) {
+        if (resultCode != android.app.Activity.RESULT_OK || resultData == null) {
             Log.e(TAG, "Invalid MediaProjection data (code=$resultCode data=$resultData); stopping.")
             android.widget.Toast.makeText(this, "MediaProjection 資料無效，請重試", android.widget.Toast.LENGTH_LONG).show()
             isRunning = false

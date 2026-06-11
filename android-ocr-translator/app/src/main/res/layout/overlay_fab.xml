@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Floating capture button. Uses a plain ImageButton (no Material3 dependency)
+  so it can be safely inflated via WindowManager in a Service context.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:padding="4dp">
+
+    <ImageButton
+        android:id="@+id/fabCapture"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:src="@drawable/ic_translate"
+        android:contentDescription="@string/fab_capture_description"
+        android:background="@drawable/fab_circle_bg"
+        android:padding="12dp"
+        android:scaleType="fitCenter"
+        android:elevation="8dp" />
+
+    <ProgressBar
+        android:id="@+id/fabLoading"
+        android:layout_width="60dp"
+        android:layout_height="60dp"
+        android:layout_gravity="center"
+        android:visibility="gone"
+        android:indeterminate="true"
+        android:indeterminateTint="@android:color/white" />
+
+</FrameLayout>

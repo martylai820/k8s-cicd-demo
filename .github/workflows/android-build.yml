@@ -1,0 +1,94 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "claude/**" ]
+    paths:
+      - 'android-ocr-translator/**'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    paths:
+      - 'android-ocr-translator/**'
+      - '.github/workflows/android-build.yml'
+
+jobs:
+  build:
+    name: Build debug & unsigned release APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Java / Gradle toolchain ────────────────────────────────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── Android SDK ────────────────────────────────────────────────────────
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licences and install platform 35
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Write local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > android-ocr-translator/local.properties
+
+      # ── Gradle wrapper executable permission ───────────────────────────────
+      - name: Grant gradlew execute permission
+        run: chmod +x android-ocr-translator/gradlew
+
+      # ── Step 1: Compile Kotlin only (isolate compile errors clearly) ───────
+      - name: Compile Kotlin sources
+        working-directory: android-ocr-translator
+        run: |
+          set -o pipefail
+          ./gradlew compileDebugKotlin --no-daemon --no-build-cache --info 2>&1 | tee /tmp/kotlin.log
+          RESULT=${PIPESTATUS[0]}
+          if [ $RESULT -ne 0 ]; then
+            echo ""
+            echo "========================================"
+            echo "KOTLIN COMPILER ERRORS:"
+            echo "========================================"
+            grep -E "^e:|error:|Unresolved reference|Type mismatch|None of the following|Overload resolution|is not a subtype" /tmp/kotlin.log | head -40
+            echo "========================================"
+          fi
+          exit $RESULT
+
+      # ── Step 2: Process resources (AAPT) ──────────────────────────────────
+      - name: Process debug resources
+        working-directory: android-ocr-translator
+        run: ./gradlew processDebugResources --no-daemon --no-build-cache
+
+      # ── Step 3: Full debug APK ─────────────────────────────────────────────
+      - name: Build debug APK
+        working-directory: android-ocr-translator
+        run: ./gradlew assembleDebug --no-daemon --no-build-cache
+
+      # ── Step 4: Release APK ────────────────────────────────────────────────
+      - name: Build unsigned release APK
+        working-directory: android-ocr-translator
+        run: ./gradlew assembleRelease --no-daemon --no-build-cache
+
+      # ── Upload artifacts ───────────────────────────────────────────────────
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OCRTranslator-debug
+          path: android-ocr-translator/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OCRTranslator-release-unsigned
+          path: android-ocr-translator/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+          if-no-files-found: error

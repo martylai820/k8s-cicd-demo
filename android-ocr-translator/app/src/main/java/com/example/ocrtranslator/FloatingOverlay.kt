@@ -81,6 +81,11 @@ class FloatingOverlay(
             y = 300
         }
         fabParams = lp
+        // ImageButton is clickable and consumes touch events before they reach the
+        // FrameLayout parent. Set the listener on the button itself, passing `root`
+        // as the WindowManager view to reposition during drag.
+        fabButton?.setOnTouchListener { _, event -> handleFabTouch(root, event) }
+        // Also set on the root so the padding area around the button is draggable.
         root.setOnTouchListener { v, event -> handleFabTouch(v, event) }
 
         try {
